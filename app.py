@@ -1,7 +1,9 @@
 from flask import Flask, request, render_template_string
 import csv
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
+def now_kst():
+    return datetime.utcnow() + timedelta(hours=9)
 
 app = Flask(__name__)
 
@@ -462,7 +464,7 @@ def check_subject_limit(rows, old_selected_all, new_selected_all):
 # ---------------- 메인 페이지 ----------------
 @app.route("/", methods=["GET", "POST"])
 def survey():
-    now = datetime.now()
+    now = now_kst()
 
     if now < START_TIME:
         return f"⏳ 아직 설문 시작 전입니다.<br>시작 시간: {START_TIME}"
