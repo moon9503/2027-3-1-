@@ -737,9 +737,6 @@ def survey():
         disabled_subjects=disabled_subjects
     )
 
-# ---------------- 실행 ----------------
-app.run(host="0.0.0.0", port=5000, debug=True)
-
 @app.route("/admin")
 def admin():
     rows = []
@@ -763,3 +760,7 @@ def admin():
     """
 
     return render_template_string(html, rows=rows)
+
+
+# ---------------- 실행 ----------------
+app.run(host="0.0.0.0", port=5000, debug=True)
