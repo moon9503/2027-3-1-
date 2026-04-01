@@ -739,3 +739,27 @@ def survey():
 
 # ---------------- 실행 ----------------
 app.run(host="0.0.0.0", port=5000, debug=True)
+
+@app.route("/admin")
+def admin():
+    rows = []
+
+    if os.path.exists(CSV_FILE):
+        with open(CSV_FILE, "r", encoding="utf-8-sig") as f:
+            reader = csv.reader(f)
+            rows = list(reader)
+
+    html = """
+    <h2>📊 설문 결과</h2>
+    <table border="1">
+    {% for row in rows %}
+        <tr>
+        {% for col in row %}
+            <td>{{ col }}</td>
+        {% endfor %}
+        </tr>
+    {% endfor %}
+    </table>
+    """
+
+    return render_template_string(html, rows=rows)
