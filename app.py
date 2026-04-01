@@ -131,7 +131,7 @@ subject_limit = {
 def get_worksheet():
     creds_json = os.environ.get("GOOGLE_CREDENTIALS")
     creds_dict = json.loads(creds_json)
-    
+
     gc = gspread.service_account_from_dict(creds_dict)
     sh = gc.open(SPREADSHEET_NAME)
 
@@ -139,8 +139,6 @@ def get_worksheet():
         ws = sh.worksheet(WORKSHEET_NAME)
     except:
         ws = sh.add_worksheet(title=WORKSHEET_NAME, rows=2000, cols=20)
-        
-    return ws     
 
     header = [
         "학번", "비밀번호",
@@ -152,6 +150,7 @@ def get_worksheet():
     ]
 
     first_row = ws.row_values(1)
+
     if first_row != header:
         if first_row == []:
             ws.append_row(header)
