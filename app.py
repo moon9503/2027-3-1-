@@ -1,4 +1,5 @@
 from flask import Flask, request, render_template_string, send_file
+import json
 import os
 import io
 import re
@@ -128,13 +129,18 @@ subject_limit = {
 
 # ---------------- 구글시트 연결 ----------------
 def get_worksheet():
-    gc = gspread.service_account(filename="service_account.json")
+    creds_json = os.environ.get("GOOGLE_CREDENTIALS")
+    creds_dict = json.loads(creds_json)
+    
+    gc = gspread.service_account_from_dict(creds_dict)
     sh = gc.open(SPREADSHEET_NAME)
 
     try:
         ws = sh.worksheet(WORKSHEET_NAME)
-    except gspread.exceptions.WorksheetNotFound:
+    except:
         ws = sh.add_worksheet(title=WORKSHEET_NAME, rows=2000, cols=20)
+        
+    return ws     
 
     header = [
         "학번", "비밀번호",
