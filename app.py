@@ -1,12 +1,11 @@
 from flask import Flask, request, render_template_string, send_file
-import json
 import os
 import io
 import re
+import requests
 from datetime import datetime, timedelta
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment
-import gspread
 
 app = Flask(__name__)
 
@@ -17,10 +16,6 @@ def now_kst():
 # ---------------- 시간 설정 ----------------
 START_TIME = datetime(2026, 4, 1, 9, 0)
 DEADLINE = datetime(2026, 4, 5, 23, 59)
-
-# ---------------- 구글시트 설정 ----------------
-SPREADSHEET_NAME = "수요조사결과"
-WORKSHEET_NAME = "응답"
 
 # ---------------- 문항별 과목 목록 ----------------
 subjects_q1 = [
@@ -127,66 +122,37 @@ subject_limit = {
     "일본 문화": 300
 }
 
-# ---------------- 구글시트 연결 ----------------
-def get_worksheet():
-    creds_json = os.environ.get("GOOGLE_CREDENTIALS")
-    creds_dict = json.loads(creds_json)
+APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzsWybxKCxvndjM8wi2c9qNsST8ulrIXbat9oWG5Ev964fE9MfuKWLCKzKCi1YKoDyWLw/exec"
 
-    gc = gspread.service_account_from_dict(creds_dict)
-    sh = gc.open(SPREADSHEET_NAME)
+def fetch_all_rows():
+    response = requests.get(APPS_SCRIPT_URL, params={"action": "read"})
+    response.raise_for_status()
+    data = response.json()
+    return data.get("rows", [])
 
-    try:
-        ws = sh.worksheet(WORKSHEET_NAME)
-    except:
-        ws = sh.add_worksheet(title=WORKSHEET_NAME, rows=2000, cols=20)
-
-    header = [
-        "학번", "비밀번호",
-        "선택13 선택과목", "선택13 총학점",
-        "선택14 선택과목", "선택14 총학점",
-        "선택15 선택과목", "선택15 총학점",
-        "선택16 선택과목", "선택16 총학점",
-        "제출시간"
-    ]
-
-    first_row = ws.row_values(1)
-
-    if first_row != header:
-        if first_row == []:
-            ws.append_row(header)
-        else:
-            ws.insert_row(header, 1)
-
-    return ws
-
-# ---------------- 시트 전체 읽기 ----------------
-def read_all_rows():
-    ws = get_worksheet()
-    values = ws.get_all_values()
-    if not values:
-        return []
-    return values[1:]
-
-# ---------------- 특정 학번 찾기 ----------------
 def find_student(student_id):
-    rows = read_all_rows()
+    rows = fetch_all_rows()
     for i, row in enumerate(rows):
         if len(row) >= 11 and row[0] == student_id:
             return i, row, rows
     return None, None, rows
 
-# ---------------- 특정 행 저장/수정 ----------------
 def save_student_row(student_id, new_row):
-    ws = get_worksheet()
-    index, row, rows = find_student(student_id)
+    payload = {
+        "action": "save",
+        "student_id": student_id,
+        "row": new_row
+    }
+    response = requests.post(APPS_SCRIPT_URL, json=payload)
+    response.raise_for_status()
+    result = response.text.strip()
 
-    if row:
-        sheet_row_number = index + 2
-        ws.update(f"A{sheet_row_number}:K{sheet_row_number}", [new_row])
+    if "updated" in result.lower():
         return "updated"
-    else:
-        ws.append_row(new_row)
-        return "created"
+    return "created"
+
+def read_all_rows():
+    return fetch_all_rows()
 
 # ---------------- 총학점 계산 ----------------
 def calculate_total(selected_subjects, credit_dict):
