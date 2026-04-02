@@ -122,6 +122,7 @@ subject_limit = {
     "일본 문화": 300
 }
 
+# ---------------- Apps Script URL ----------------
 APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzsWybxKCxvndjM8wi2c9qNsST8ulrIXbat9oWG5Ev964fE9MfuKWLCKzKCi1YKoDyWLw/exec"
 
 def fetch_all_rows():
@@ -250,6 +251,22 @@ def check_subject_limit(rows, old_selected_all, new_selected_all):
 
     return full_subjects
 
+# ---------------- 공통 선택 리스트 변환 ----------------
+def build_selected_all(selected_q1, selected_q2, selected_q3, selected_q4):
+    return (
+        [f"선택13-{s}" for s in selected_q1] +
+        [f"선택14-{s}" for s in selected_q2] +
+        [f"선택15-{s}" for s in selected_q3] +
+        [f"선택16-{s}" for s in selected_q4]
+    )
+
+# ---------------- 중복 선택 검사 ----------------
+def has_duplicate_between_q1_q2(selected_q1, selected_q2):
+    return list(set(selected_q1) & set(selected_q2))
+
+def has_duplicate_between_q3_q4(selected_q3, selected_q4):
+    return list(set(selected_q3) & set(selected_q4))
+
 # ---------------- 메인 HTML ----------------
 html = """
 <!doctype html>
@@ -262,16 +279,37 @@ html = """
       font-family: Arial, sans-serif;
       line-height: 1.6;
       margin: 20px;
+      max-width: 760px;
     }
     .closed {
       color: gray;
     }
+    .top-box {
+      border: 1px solid #ddd;
+      padding: 12px;
+      margin-bottom: 20px;
+      border-radius: 8px;
+      background: #fafafa;
+    }
     h3 {
-      margin-top: 30px;
+      margin-top: 24px;
     }
     button {
       margin-top: 10px;
-      padding: 6px 12px;
+      padding: 8px 14px;
+      margin-right: 8px;
+    }
+    .step {
+      font-weight: bold;
+      margin-bottom: 10px;
+    }
+    .subject-box {
+      margin-top: 14px;
+    }
+    .summary {
+      font-size: 14px;
+      color: #444;
+      margin-top: 10px;
     }
   </style>
 </head>
@@ -284,104 +322,154 @@ html = """
     <p><strong>{{ message }}</strong></p>
   {% endif %}
 
-  <form method="post" onsubmit="return checkForm()">
-    학번: <input type="text" name="student_id" value="{{ student_id }}" required>
-    <br><br>
+  <div class="top-box">
+    <div class="step">현재 단계: {{ step }}/4</div>
+    <div>학번: {{ student_id if student_id else '-' }}</div>
+  </div>
 
-    비밀번호(숫자 4자리):
-    <input type="password" name="password" value="{{ password }}" maxlength="4" required>
-    <button type="submit" name="action" value="load">불러오기</button>
-    <br><br>
+  <form method="post" onsubmit="return checkStepForm()">
+    <input type="hidden" name="step" value="{{ step }}">
 
-    <h3>선택13 (총 4개 선택)</h3>
-    {% for sub, credit in subjects_q1 %}
-      <label class="{% if disabled_subjects['선택13-' + sub] and sub not in selected_q1 %}closed{% endif %}">
-        <input
-          type="checkbox"
-          name="q1_subject"
-          value="{{ sub }}"
-          data-credit="{{ credit }}"
-          {% if sub in selected_q1 %}checked{% endif %}
-          {% if disabled_subjects['선택13-' + sub] and sub not in selected_q1 %}disabled{% endif %}
-        >
-        {{ sub }} ({{ credit }}학점 /
-        {% if remaining['선택13-' + sub] > 0 %}
-          남은 자리: {{ remaining['선택13-' + sub] }}
-        {% else %}
-          <strong>마감</strong>
-        {% endif %}
-        )
-      </label><br>
+    {% if step != 1 %}
+      <input type="hidden" name="student_id" value="{{ student_id }}">
+      <input type="hidden" name="password" value="{{ password }}">
+    {% endif %}
+
+    {% for sub in selected_q1 %}
+      <input type="hidden" name="q1_subject" value="{{ sub }}">
+    {% endfor %}
+    {% for sub in selected_q2 %}
+      <input type="hidden" name="q2_subject" value="{{ sub }}">
+    {% endfor %}
+    {% for sub in selected_q3 %}
+      <input type="hidden" name="q3_subject" value="{{ sub }}">
+    {% endfor %}
+    {% for sub in selected_q4 %}
+      <input type="hidden" name="q4_subject" value="{{ sub }}">
     {% endfor %}
 
-    <br>
-    <h3>선택14 (총 4개 선택)</h3>
-    {% for sub, credit in subjects_q2 %}
-      <label class="{% if disabled_subjects['선택14-' + sub] and sub not in selected_q2 %}closed{% endif %}">
-        <input
-          type="checkbox"
-          name="q2_subject"
-          value="{{ sub }}"
-          data-credit="{{ credit }}"
-          {% if sub in selected_q2 %}checked{% endif %}
-          {% if disabled_subjects['선택14-' + sub] and sub not in selected_q2 %}disabled{% endif %}
-        >
-        {{ sub }} ({{ credit }}학점 /
-        {% if remaining['선택14-' + sub] > 0 %}
-          남은 자리: {{ remaining['선택14-' + sub] }}
-        {% else %}
-          <strong>마감</strong>
-        {% endif %}
-        )
-      </label><br>
-    {% endfor %}
+    {% if step == 1 %}
+      <label>학번: <input type="text" name="student_id" value="{{ student_id }}" required></label>
+      <br><br>
 
-    <br>
-    <h3>선택15 (최대 2개, 총 4학점이 되어야 함)</h3>
-    {% for sub, credit in subjects_q3 %}
-      <label class="{% if disabled_subjects['선택15-' + sub] and sub not in selected_q3 %}closed{% endif %}">
-        <input
-          type="checkbox"
-          name="q3_subject"
-          value="{{ sub }}"
-          data-credit="{{ credit }}"
-          {% if sub in selected_q3 %}checked{% endif %}
-          {% if disabled_subjects['선택15-' + sub] and sub not in selected_q3 %}disabled{% endif %}
-        >
-        {{ sub }} ({{ credit }}학점 /
-        {% if remaining['선택15-' + sub] > 0 %}
-          남은 자리: {{ remaining['선택15-' + sub] }}
-        {% else %}
-          <strong>마감</strong>
-        {% endif %}
-        )
-      </label><br>
-    {% endfor %}
+      <label>비밀번호(숫자 4자리):
+        <input type="password" name="password" value="{{ password }}" maxlength="4" required>
+      </label>
+      <button type="submit" name="action" value="load">불러오기</button>
 
-    <br>
-    <h3>선택16 (최대 2개, 총 4학점이 되어야 함)</h3>
-    {% for sub, credit in subjects_q4 %}
-      <label class="{% if disabled_subjects['선택16-' + sub] and sub not in selected_q4 %}closed{% endif %}">
-        <input
-          type="checkbox"
-          name="q4_subject"
-          value="{{ sub }}"
-          data-credit="{{ credit }}"
-          {% if sub in selected_q4 %}checked{% endif %}
-          {% if disabled_subjects['선택16-' + sub] and sub not in selected_q4 %}disabled{% endif %}
-        >
-        {{ sub }} ({{ credit }}학점 /
-        {% if remaining['선택16-' + sub] > 0 %}
-          남은 자리: {{ remaining['선택16-' + sub] }}
-        {% else %}
-          <strong>마감</strong>
-        {% endif %}
-        )
-      </label><br>
-    {% endfor %}
+      <h3>선택13 (총 4개 선택)</h3>
+      <div class="subject-box">
+        {% for sub, credit in subjects_q1 %}
+          <label class="{% if disabled_subjects['선택13-' + sub] and sub not in selected_q1 %}closed{% endif %}">
+            <input
+              type="checkbox"
+              name="q1_subject_current"
+              value="{{ sub }}"
+              data-credit="{{ credit }}"
+              {% if sub in selected_q1 %}checked{% endif %}
+              {% if disabled_subjects['선택13-' + sub] and sub not in selected_q1 %}disabled{% endif %}
+            >
+            {{ sub }} ({{ credit }}학점 /
+            {% if remaining['선택13-' + sub] > 0 %}
+              남은 자리: {{ remaining['선택13-' + sub] }}
+            {% else %}
+              <strong>마감</strong>
+            {% endif %}
+            )
+          </label><br>
+        {% endfor %}
+      </div>
 
-    <br>
-    <button type="submit" name="action" value="save">제출 / 수정</button>
+      <div class="summary">선택13은 총 12학점이 되어야 합니다.</div>
+      <button type="submit" name="action" value="next">다음</button>
+    {% endif %}
+
+    {% if step == 2 %}
+      <h3>선택14 (총 4개 선택)</h3>
+      <div class="summary">선택13에서 고른 과목과 같은 이름의 과목은 선택할 수 없습니다.</div>
+      <div class="subject-box">
+        {% for sub, credit in subjects_q2 %}
+          <label class="{% if (disabled_subjects['선택14-' + sub] and sub not in selected_q2) or (sub in selected_q1 and sub not in selected_q2) %}closed{% endif %}">
+            <input
+              type="checkbox"
+              name="q2_subject_current"
+              value="{{ sub }}"
+              data-credit="{{ credit }}"
+              {% if sub in selected_q2 %}checked{% endif %}
+              {% if (disabled_subjects['선택14-' + sub] and sub not in selected_q2) or (sub in selected_q1 and sub not in selected_q2) %}disabled{% endif %}
+            >
+            {{ sub }} ({{ credit }}학점 /
+            {% if remaining['선택14-' + sub] > 0 %}
+              남은 자리: {{ remaining['선택14-' + sub] }}
+            {% else %}
+              <strong>마감</strong>
+            {% endif %}
+            )
+          </label><br>
+        {% endfor %}
+      </div>
+
+      <div class="summary">선택14는 총 12학점이 되어야 합니다.</div>
+      <button type="submit" name="action" value="prev">이전</button>
+      <button type="submit" name="action" value="next">다음</button>
+    {% endif %}
+
+    {% if step == 3 %}
+      <h3>선택15 (최대 2개, 총 4학점이 되어야 함)</h3>
+      <div class="subject-box">
+        {% for sub, credit in subjects_q3 %}
+          <label class="{% if disabled_subjects['선택15-' + sub] and sub not in selected_q3 %}closed{% endif %}">
+            <input
+              type="checkbox"
+              name="q3_subject_current"
+              value="{{ sub }}"
+              data-credit="{{ credit }}"
+              {% if sub in selected_q3 %}checked{% endif %}
+              {% if disabled_subjects['선택15-' + sub] and sub not in selected_q3 %}disabled{% endif %}
+            >
+            {{ sub }} ({{ credit }}학점 /
+            {% if remaining['선택15-' + sub] > 0 %}
+              남은 자리: {{ remaining['선택15-' + sub] }}
+            {% else %}
+              <strong>마감</strong>
+            {% endif %}
+            )
+          </label><br>
+        {% endfor %}
+      </div>
+
+      <button type="submit" name="action" value="prev">이전</button>
+      <button type="submit" name="action" value="next">다음</button>
+    {% endif %}
+
+    {% if step == 4 %}
+      <h3>선택16 (최대 2개, 총 4학점이 되어야 함)</h3>
+      <div class="summary">선택15에서 고른 과목과 같은 이름의 과목은 선택할 수 없습니다.</div>
+      <div class="subject-box">
+        {% for sub, credit in subjects_q4 %}
+          <label class="{% if (disabled_subjects['선택16-' + sub] and sub not in selected_q4) or (sub in selected_q3 and sub not in selected_q4) %}closed{% endif %}">
+            <input
+              type="checkbox"
+              name="q4_subject_current"
+              value="{{ sub }}"
+              data-credit="{{ credit }}"
+              {% if sub in selected_q4 %}checked{% endif %}
+              {% if (disabled_subjects['선택16-' + sub] and sub not in selected_q4) or (sub in selected_q3 and sub not in selected_q4) %}disabled{% endif %}
+            >
+            {{ sub }} ({{ credit }}학점 /
+            {% if remaining['선택16-' + sub] > 0 %}
+              남은 자리: {{ remaining['선택16-' + sub] }}
+            {% else %}
+              <strong>마감</strong>
+            {% endif %}
+            )
+          </label><br>
+        {% endfor %}
+      </div>
+
+      <button type="submit" name="action" value="prev">이전</button>
+      <button type="submit" name="action" value="submit">제출 / 수정</button>
+    {% endif %}
   </form>
 
   <script>
@@ -398,71 +486,86 @@ html = """
       return document.querySelectorAll('input[name="' + name + '"]:checked').length;
     }
 
-    function checkForm() {
+    function checkStepForm() {
+      const step = parseInt(document.querySelector('input[name="step"]').value);
       const activeElement = document.activeElement;
-      const studentId = document.querySelector('input[name="student_id"]').value.trim();
-      const password = document.querySelector('input[name="password"]').value.trim();
+      const action = activeElement ? activeElement.value : "";
 
-      if (studentId === "") {
-        alert("학번을 입력하세요!");
-        return false;
+      if (step === 1) {
+        const studentId = document.querySelector('input[name="student_id"]').value.trim();
+        const password = document.querySelector('input[name="password"]').value.trim();
+
+        if (studentId === "") {
+          alert("학번을 입력하세요!");
+          return false;
+        }
+
+        if (!/^\\d{4}$/.test(password)) {
+          alert("비밀번호는 숫자 4자리로 입력하세요!");
+          return false;
+        }
+
+        if (action === "load") {
+          return true;
+        }
+
+        if (action === "next") {
+          let q1Total = sumCredits("q1_subject_current");
+          if (q1Total !== 12) {
+            alert("선택13은 4개를 선택해야 합니다!");
+            return false;
+          }
+        }
       }
 
-      if (!/^\\d{4}$/.test(password)) {
-        alert("비밀번호는 숫자 4자리로 입력하세요!");
-        return false;
+      if (step === 2) {
+        if (action === "next") {
+          let q2Total = sumCredits("q2_subject_current");
+          if (q2Total !== 12) {
+            alert("선택14는 4개를 선택해야 합니다!");
+            return false;
+          }
+        }
       }
 
-      if (activeElement && activeElement.value === "load") {
-        return true;
+      if (step === 3) {
+        if (action === "next") {
+          let q3Total = sumCredits("q3_subject_current");
+          let q3Count = countChecked("q3_subject_current");
+
+          if (q3Count === 0) {
+            alert("선택15에서 최소 1개는 선택하세요!");
+            return false;
+          }
+          if (q3Total !== 4) {
+            alert("선택15의 총 학점이 4학점이 되어야 합니다!");
+            return false;
+          }
+          if (q3Count > 2) {
+            alert("선택15는 최대 2개까지만 선택 가능합니다!");
+            return false;
+          }
+        }
       }
 
-      let q1Total = sumCredits("q1_subject");
-      let q2Total = sumCredits("q2_subject");
-      let q3Total = sumCredits("q3_subject");
-      let q4Total = sumCredits("q4_subject");
+      if (step === 4) {
+        if (action === "submit") {
+          let q4Total = sumCredits("q4_subject_current");
+          let q4Count = countChecked("q4_subject_current");
 
-      let q3Count = countChecked("q3_subject");
-      let q4Count = countChecked("q4_subject");
-
-      if (q1Total !== 12) {
-        alert("선택13은 4개를 선택해야 합니다!");
-        return false;
-      }
-
-      if (q2Total !== 12) {
-        alert("선택14는 4개를 선택해야 합니다!");
-        return false;
-      }
-
-      if (q3Count === 0) {
-        alert("선택15에서 최소 1개는 선택하세요!");
-        return false;
-      }
-
-      if (q4Count === 0) {
-        alert("선택16에서 최소 1개는 선택하세요!");
-        return false;
-      }
-
-      if (q3Total !== 4) {
-        alert("선택15의 총 학점이 4학점이 되어야 합니다!");
-        return false;
-      }
-
-      if (q4Total !== 4) {
-        alert("선택16의 총 학점이 4학점이 되어야 합니다!");
-        return false;
-      }
-
-      if (q3Count > 2) {
-        alert("선택15는 최대 2개까지만 선택 가능합니다!");
-        return false;
-      }
-
-      if (q4Count > 2) {
-        alert("선택16은 최대 2개까지만 선택 가능합니다!");
-        return false;
+          if (q4Count === 0) {
+            alert("선택16에서 최소 1개는 선택하세요!");
+            return false;
+          }
+          if (q4Total !== 4) {
+            alert("선택16의 총 학점이 4학점이 되어야 합니다!");
+            return false;
+          }
+          if (q4Count > 2) {
+            alert("선택16은 최대 2개까지만 선택 가능합니다!");
+            return false;
+          }
+        }
       }
 
       return true;
@@ -614,6 +717,7 @@ def survey():
     selected_q3 = []
     selected_q4 = []
     message = ""
+    step = 1
 
     rows = read_all_rows()
     selected_all = []
@@ -621,18 +725,40 @@ def survey():
     disabled_subjects = get_disabled_subjects(rows, selected_all)
 
     if request.method == "POST":
+        step = int(request.form.get("step", 1))
         action = request.form.get("action")
         student_id = request.form.get("student_id", "").strip()
         password = request.form.get("password", "").strip()
 
-        if not student_id:
-            message = "학번을 입력하세요."
-        elif not is_valid_password(password):
-            message = "비밀번호는 숫자 4자리로 입력하세요."
-        else:
-            index, row, rows = find_student(student_id)
+        # 각 단계의 현재 체크값 읽기
+        q1_current = request.form.getlist("q1_subject_current")
+        q2_current = request.form.getlist("q2_subject_current")
+        q3_current = request.form.getlist("q3_subject_current")
+        q4_current = request.form.getlist("q4_subject_current")
 
-            if action == "load":
+        # 이전 단계 hidden 값 읽기
+        selected_q1 = request.form.getlist("q1_subject")
+        selected_q2 = request.form.getlist("q2_subject")
+        selected_q3 = request.form.getlist("q3_subject")
+        selected_q4 = request.form.getlist("q4_subject")
+
+        # 현재 step에 해당하는 선택값 덮어쓰기
+        if step == 1:
+            selected_q1 = q1_current
+        elif step == 2:
+            selected_q2 = q2_current
+        elif step == 3:
+            selected_q3 = q3_current
+        elif step == 4:
+            selected_q4 = q4_current
+
+        if action == "load":
+            if not student_id:
+                message = "학번을 입력하세요."
+            elif not is_valid_password(password):
+                message = "비밀번호는 숫자 4자리로 입력하세요."
+            else:
+                index, row, rows = find_student(student_id)
                 if row:
                     saved_password = row[1].replace("'", "")
                     if password != saved_password:
@@ -644,37 +770,96 @@ def survey():
                         selected_q3 = row[6].split(",") if row[6] else []
                         selected_q4 = row[8].split(",") if row[8] else []
                         message = f"기존 제출 내용을 불러왔습니다. 마지막 제출 시간: {row[10]}"
+                        step = 1
                 else:
-                    message = "기존 제출 내용이 없습니다. 현재 입력한 비밀번호로 새 제출이 저장됩니다."
+                    message = "기존 제출 내용이 없습니다. 새로 작성하세요."
+                    step = 1
 
-            elif action == "save":
-                selected_q1 = request.form.getlist("q1_subject")
-                selected_q2 = request.form.getlist("q2_subject")
-                selected_q3 = request.form.getlist("q3_subject")
-                selected_q4 = request.form.getlist("q4_subject")
+        elif action == "prev":
+            step = max(1, step - 1)
 
+        elif action == "next":
+            if step == 1:
+                if not student_id:
+                    message = "학번을 입력하세요."
+                elif not is_valid_password(password):
+                    message = "비밀번호는 숫자 4자리로 입력하세요."
+                else:
+                    q1_total = calculate_total(selected_q1, subject_credit_q1)
+                    if q1_total != 12:
+                        message = "❌ 선택13은 4개를 선택해야 합니다."
+                    else:
+                        step = 2
+
+            elif step == 2:
+                q2_total = calculate_total(selected_q2, subject_credit_q2)
+                duplicate_q1_q2 = has_duplicate_between_q1_q2(selected_q1, selected_q2)
+
+                if q2_total != 12:
+                    message = "❌ 선택14는 4개를 선택해야 합니다."
+                elif duplicate_q1_q2:
+                    message = "❌ 선택13과 선택14에서 같은 과목을 중복 선택할 수 없습니다: " + ", ".join(sorted(duplicate_q1_q2))
+                else:
+                    step = 3
+
+            elif step == 3:
+                q3_total = calculate_total(selected_q3, subject_credit_q3)
+
+                if len(selected_q3) == 0:
+                    message = "❌ 선택15에서 최소 1개는 선택하세요."
+                elif q3_total != 4:
+                    message = "❌ 선택15의 총 학점이 4학점이 되어야 합니다."
+                elif len(selected_q3) > 2:
+                    message = "❌ 선택15는 최대 2개까지만 선택 가능합니다."
+                else:
+                    step = 4
+
+        elif action == "submit":
+            if not student_id:
+                message = "학번을 입력하세요."
+            elif not is_valid_password(password):
+                message = "비밀번호는 숫자 4자리로 입력하세요."
+            else:
                 q1_total = calculate_total(selected_q1, subject_credit_q1)
                 q2_total = calculate_total(selected_q2, subject_credit_q2)
                 q3_total = calculate_total(selected_q3, subject_credit_q3)
                 q4_total = calculate_total(selected_q4, subject_credit_q4)
 
+                duplicate_q1_q2 = has_duplicate_between_q1_q2(selected_q1, selected_q2)
+                duplicate_q3_q4 = has_duplicate_between_q3_q4(selected_q3, selected_q4)
+
                 if q1_total != 12:
                     message = "❌ 선택13은 4개를 선택해야 합니다."
+                    step = 1
                 elif q2_total != 12:
                     message = "❌ 선택14는 4개를 선택해야 합니다."
+                    step = 2
+                elif duplicate_q1_q2:
+                    message = "❌ 선택13과 선택14에서 같은 과목을 중복 선택할 수 없습니다: " + ", ".join(sorted(duplicate_q1_q2))
+                    step = 2
                 elif len(selected_q3) == 0:
                     message = "❌ 선택15에서 최소 1개는 선택하세요."
-                elif len(selected_q4) == 0:
-                    message = "❌ 선택16에서 최소 1개는 선택하세요."
+                    step = 3
                 elif q3_total != 4:
                     message = "❌ 선택15의 총 학점이 4학점이 되어야 합니다."
-                elif q4_total != 4:
-                    message = "❌ 선택16의 총 학점이 4학점이 되어야 합니다."
+                    step = 3
                 elif len(selected_q3) > 2:
                     message = "❌ 선택15는 최대 2개까지만 선택 가능합니다."
+                    step = 3
+                elif len(selected_q4) == 0:
+                    message = "❌ 선택16에서 최소 1개는 선택하세요."
+                    step = 4
+                elif q4_total != 4:
+                    message = "❌ 선택16의 총 학점이 4학점이 되어야 합니다."
+                    step = 4
                 elif len(selected_q4) > 2:
                     message = "❌ 선택16은 최대 2개까지만 선택 가능합니다."
+                    step = 4
+                elif duplicate_q3_q4:
+                    message = "❌ 선택15와 선택16에서 같은 과목을 중복 선택할 수 없습니다: " + ", ".join(sorted(duplicate_q3_q4))
+                    step = 4
                 else:
+                    index, row, rows = find_student(student_id)
                     old_selected_all = []
 
                     if row:
@@ -682,6 +867,7 @@ def survey():
                         if password != saved_password:
                             message = "비밀번호가 일치하지 않아 수정할 수 없습니다."
                             password = ""
+                            step = 1
                         else:
                             old_q1 = row[2].split(",") if row[2] else []
                             old_q2 = row[4].split(",") if row[4] else []
@@ -696,17 +882,13 @@ def survey():
                             )
 
                     if password != "":
-                        new_selected_all = (
-                            [f"선택13-{s}" for s in selected_q1] +
-                            [f"선택14-{s}" for s in selected_q2] +
-                            [f"선택15-{s}" for s in selected_q3] +
-                            [f"선택16-{s}" for s in selected_q4]
-                        )
-
+                        new_selected_all = build_selected_all(selected_q1, selected_q2, selected_q3, selected_q4)
                         full_subjects = check_subject_limit(rows, old_selected_all, new_selected_all)
+
                         if full_subjects:
                             display_subjects = [s.split("-", 1)[1] for s in full_subjects]
                             message = "⚠️ 다음 과목은 정원이 마감되어 선택할 수 없습니다: " + ", ".join(display_subjects)
+                            step = 4
                         else:
                             submitted_at = now_kst().strftime("%Y-%m-%d %H:%M:%S")
                             new_row = [
@@ -724,14 +906,10 @@ def survey():
                                 message = "✅ 기존 제출 내용이 수정되었습니다."
                             else:
                                 message = "✅ 제출이 완료되었습니다."
+                            step = 1
 
         rows = read_all_rows()
-        selected_all = (
-            [f"선택13-{s}" for s in selected_q1] +
-            [f"선택14-{s}" for s in selected_q2] +
-            [f"선택15-{s}" for s in selected_q3] +
-            [f"선택16-{s}" for s in selected_q4]
-        )
+        selected_all = build_selected_all(selected_q1, selected_q2, selected_q3, selected_q4)
         remaining = get_remaining_seats(rows)
         disabled_subjects = get_disabled_subjects(rows, selected_all)
 
@@ -744,6 +922,7 @@ def survey():
         selected_q3=selected_q3,
         selected_q4=selected_q4,
         message=message,
+        step=step,
         start_time=START_TIME,
         deadline=DEADLINE,
         subjects_q1=subjects_q1,
